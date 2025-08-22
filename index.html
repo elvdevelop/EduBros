@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>EduBros</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin:0; padding:0; background:#0e0f13; color:#e7ecf3; font-family: system-ui, Arial, sans-serif; }
+    #wrap { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    canvas { background:#1a1d28; border:2px solid #2c3246; width: 100%; max-width:900px; height:auto; image-rendering: pixelated; }
+
+    /* Overlay UI */
+    .overlay {
+      position: fixed; inset: 0; display: none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.55); padding:16px; z-index: 10;
+    }
+    .card {
+      width: min(720px, 96vw); background:#121420; border:2px solid #2c3246; border-radius:12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.4); padding:16px;
+    }
+    .title { font-weight:700; letter-spacing:.5px; }
+    .subtle { color:#aeb6ca; font-size:14px; }
+    .btn {
+      display:inline-block; padding:10px 14px; border:2px solid #3a4363; background:#20253a;
+      color:#e7ecf3; border-radius:10px; cursor:pointer; user-select:none;
+    }
+    .btn:hover { background:#262d4a; }
+    .btn.primary { border-color:#5b75ff; background:#3040a0; }
+    .btnbar { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+
+    /* Touch controls */
+    #touch { position: fixed; inset: auto 0 0 0; display:flex; justify-content:space-between; padding:10px; gap:10px; pointer-events:none; }
+    .pad { pointer-events:auto; display:flex; gap:10px; }
+    .pad .key, .pad .jump {
+      width:64px; height:64px; border-radius:12px; border:2px solid #3a4363; background:#20253a88; display:flex; align-items:center; justify-content:center;
+      font-weight:700; user-select:none;
+    }
+    .pad .jump { width:84px; }
+    .key:active, .jump:active { background:#3a4363bb; }
+
+    /* Small helpers */
+    .mt8 { margin-top:8px; }
+    .mt12 { margin-top:12px; }
+    .mt16 { margin-top:16px; }
+    .center { text-align:center; }
+    a, a:visited { color:#9bb1ff; }
+  </style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="900" height="506" aria-label="EduBros Game Canvas"></canvas></div>
+
+<!-- Loading -->
+<div id="loading" class="overlay" aria-modal="true" role="dialog">
+  <div class="card center">
+    <div class="title" style="font-size:28px;">Memuat…</div>
+    <div class="subtle mt8">Menyiapkan dunia belajar</div>
+    <div class="mt12"><progress id="prog" max="100" value="0" style="width:80%; height:18px;"></progress></div>
+  </div>
+</div>
+
+<!-- Main Menu -->
+<div id="menu" class="overlay" style="display:flex;" aria-modal="true" role="dialog">
+  <div class="card">
+    <div class="center">
+      <img src="assets/logo.svg" alt="Logo EduBros" style="width:120px;height:120px;image-rendering: pixelated;">
+      <div id="logo" class="title" style="font-size:46px; letter-spacing:1px;">EduBros</div>
+      <div class="subtle mt8">“Edukasi itu penting”</div>
+    </div>
+    <div class="mt16">
+      <p>Game platformer 2D edukatif dengan karakter <b>Ahri</b>. Kumpulkan bintang, hindari musuh, dan jawab pertanyaan untuk membuka jalur menuju bendera akhir level.</p>
+      <ul>
+        <li>Kontrol: ← → untuk gerak, ↑ / Spasi untuk lompat. (HP: tombol layar bawah)</li>
+        <li>Jawab kuis yang muncul tiap beberapa bintang terkumpul.</li>
+      </ul>
+    </div>
+    <div class="btnbar center mt16">
+      <button id="startBtn" class="btn primary">Mulai</button>
+      <button id="howBtn" class="btn">Cara Main</button>
+    </div>
+    <div class="center mt12 subtle">Versi: 1.0 – semua aset digambar prosedural (aman hak cipta)</div>
+  </div>
+</div>
+
+<!-- How-to -->
+<div id="how" class="overlay" aria-modal="true" role="dialog">
+  <div class="card">
+    <div class="title" style="font-size:22px;">Cara Main</div>
+    <ol class="mt8">
+      <li>Gerakkan Ahri ke kanan menuju bendera.</li>
+      <li>Kumpulkan bintang. Setiap 3 bintang, kuis akan muncul.</li>
+      <li>Jawab benar untuk membuka penghalang selanjutnya.</li>
+      <li>Sentuh musuh = kalah; coba lagi dari checkpoint.</li>
+    </ol>
+    <div class="btnbar">
+      <button class="btn" onclick="toggleOverlay('how', false)">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quiz -->
+<div id="quiz" class="overlay" aria-modal="true" role="dialog">
+  <div class="card">
+    <div class="title" id="qTitle" style="font-size:20px;">Pertanyaan</div>
+    <div id="qText" class="mt8"></div>
+    <div id="qChoices" class="btnbar mt12"></div>
+    <div id="qFeedback" class="mt12 subtle"></div>
+    <div class="btnbar mt16">
+      <button class="btn" id="skipBtn" title="Lewati (akan muncul lagi)">Lewati</button>
+    </div>
+  </div>
+</div>
+
+<!-- Touch controls -->
+<div id="touch" aria-hidden="false">
+  <div class="pad">
+    <div class="key" data-k="ArrowLeft">←</div>
+    <div class="key" data-k="ArrowRight">→</div>
+  </div>
+  <div class="pad">
+    <div class="jump" data-k="Space">Lompat</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  // ==== Config (mudah diubah) ====
+  const CONFIG = {
+    JUMP_STRENGTH: 16, // tambah nilainya untuk lompat lebih tinggi
+    GRAVITY: 0.72,
+    FRICTION: 0.82
+  };
+
+  // ====== Simple pseudo-pixel art palette ======
+  const PAL = {
+    bgSky: '#1a1d28',
+    bgFar: '#151826',
+    ground1: '#2e2a3f',
+    ground2: '#3a3553',
+    block: '#4c4673',
+    blockEdge: '#767bb6',
+    star: '#ffd95a',
+    starEdge: '#ffb700',
+    player: '#7be0ff',
+    playerEdge: '#2dc0ff',
+    enemy: '#ff7b7b',
+    enemyEdge: '#ff3b3b',
+    goal: '#7bff8b',
+    goalPole: '#38c46b',
+    text: '#e7ecf3',
+    shadow: 'rgba(0,0,0,.25)'
+  };
+
+  // ====== Game state ======
+  const state = {
+    scene: 'menu', // 'menu'|'play'|'dead'|'win'
+    camX: 0,
+    keys: {},
+    touch: {left:false,right:false,jump:false},
+    gravity: CONFIG.GRAVITY,
+    friction: CONFIG.FRICTION,
+    questionGateOpen: 0, // how many barriers opened
+    stars: 0,
+    lives: 3,
+    checkpointX: 60,
+    answered: new Set(),
+    pendingQuestion: null
+  };
+
+  // ====== Level definition (simple, side-scrolling) ======
+  const groundY = canvas.height - 60;
+
+  const platforms = [
+    // ground base segments
+    {x:0, y:groundY, w:1600, h:60},
+    {x:1700, y:groundY, w:1200, h:60},
+    // floating blocks
+    {x:220, y:groundY-120, w:120, h:20},
+    {x:380, y:groundY-180, w:120, h:20},
+    {x:540, y:groundY-120, w:120, h:20},
+    {x:820, y:groundY-160, w:140, h:20},
+    {x:1040, y:groundY-220, w:140, h:20},
+    {x:1240, y:groundY-160, w:140, h:20},
+    {x:1800, y:groundY-140, w:160, h:20},
+    {x:1980, y:groundY-200, w:140, h:20},
+    {x:2200, y:groundY-260, w:140, h:20},
+    {x:2400, y:groundY-200, w:160, h:20},
+  ];
+
+  const barriers = [
+    // quiz barriers that open after correct answers
+    {x:900, y:groundY-80, w:20, h:80, opened:false, needStars:3},
+    {x:1600, y:groundY-80, w:20, h:80, opened:false, needStars:6},
+    {x:2550, y:groundY-80, w:20, h:80, opened:false, needStars:9},
+  ];
+
+  const stars = [
+    {x:260, y:groundY-150}, {x:400, y:groundY-210}, {x:560, y:groundY-150},
+    {x:830, y:groundY-190}, {x:1060, y:groundY-250}, {x:1260, y:groundY-190},
+    {x:1820, y:groundY-170}, {x:1990, y:groundY-230}, {x:2220, y:groundY-290},
+    {x:2420, y:groundY-230}, {x:300, y:groundY-30}, {x:700, y:groundY-30},
+  ].map(s => ({...s, got:false}));
+
+  const enemies = [
+    {x:740, y:groundY-28, w:28, h:28, dir:-1, speed:1.4, min:650, max:820},
+    {x:1500, y:groundY-28, w:28, h:28, dir:1, speed:1.2, min:1440, max:1560},
+    {x:2100, y:groundY-28, w:28, h:28, dir:1, speed:1.1, min:2050, max:2140},
+  ];
+
+  const goal = {x:2800, y:groundY-120, w:18, h:120};
+
+  // ====== Player (Ahri) ======
+  const player = {
+    x:60, y:groundY-40, w:26, h:36,
+    vx:0, vy:0, onGround:false, facing:1
+  };
+
+  // ====== Utility ======
+  const rectsOverlap = (a,b)=> a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+  const clamp = (v, lo, hi)=> Math.max(lo, Math.min(hi, v));
+
+  // ====== Quiz data (45 questions) ======
+  const QUIZ = [
+    {q:"Matematika: 12 × 8 = ?", choices:["80","88","96","108"], correct:2, tag:"Matematika"},
+    {q:"Matematika: FPB dari 36 dan 48 adalah…", choices:["6","8","12","18"], correct:2, tag:"Matematika"},
+    {q:"Matematika: 3/4 + 2/3 = ?", choices:["17/12","13/12","5/7","19/12"], correct:1, tag:"Matematika"},
+    {q:"Matematika: 25% dari 240 = ?", choices:["50","55","60","75"], correct:2, tag:"Matematika"},
+    {q:"Matematika: Aritmetika: selisih 7 dan -5 adalah…", choices:["2","-12","12","-2"], correct:2, tag:"Matematika"},
+
+    {q:"IPA: Planet terbesar di Tata Surya?", choices:["Bumi","Saturnus","Yupiter","Neptunus"], correct:2, tag:"IPA"},
+    {q:"IPA: Air mendidih pada suhu… (pada 1 atm)", choices:["50°C","75°C","90°C","100°C"], correct:3, tag:"IPA"},
+    {q:"IPA: Zat yang mempertahankan bentuk & volume: ", choices:["Padat","Cair","Gas","Plasma"], correct:0, tag:"IPA"},
+    {q:"IPA: Sumber energi terbarukan:", choices:["Batu bara","Minyak bumi","Matahari","Gas alam"], correct:2, tag:"IPA"},
+    {q:"IPA: Alat ukur kuat arus listrik:", choices:["Voltmeter","Amperemeter","Ohmmeter","Barometer"], correct:1, tag:"IPA"},
+
+    {q:"Bahasa Inggris: Sinonim 'big'", choices:["tiny","huge","thin","slow"], correct:1, tag:"English"},
+    {q:"Bahasa Inggris: Past tense dari 'go'", choices:["goed","goes","went","gone"], correct:2, tag:"English"},
+    {q:"Bahasa Inggris: 'Whom' digunakan sebagai…", choices:["subject","object","possessive","adverb"], correct:1, tag:"English"},
+    {q:"Bahasa Inggris: Bentuk jamak 'child'", choices:["childes","childs","childrens","children"], correct:3, tag:"English"},
+    {q:"Bahasa Inggris: Arti 'environment'", choices:["lingkungan","perpustakaan","pemerintah","peralatan"], correct:0, tag:"English"},
+
+    {q:"Sejarah: Proklamasi Indonesia tahun…", choices:["1942","1945","1949","1950"], correct:1, tag:"Sejarah"},
+    {q:"Sejarah: Kerajaan Majapahit puncak kejayaan pada masa…", choices:["Gajah Mada","Kertanegara","Hayam Wuruk","Ken Arok"], correct:2, tag:"Sejarah"},
+    {q:"Sejarah: VOC adalah kongsi dagang dari…", choices:["Inggris","Belanda","Portugal","Spanyol"], correct:1, tag:"Sejarah"},
+    {q:"Sejarah: Budi Utomo berdiri tahun…", choices:["1905","1908","1928","1945"], correct:1, tag:"Sejarah"},
+    {q:"Sejarah: Sumpah Pemuda diikrarkan tahun…", choices:["1926","1927","1928","1930"], correct:2, tag:"Sejarah"},
+
+    {q:"PPKn: Lambang sila ke-5 Pancasila:", choices:["Bintang","Rantai","Pohon beringin","Padi & kapas"], correct:3, tag:"PPKn"},
+    {q:"PPKn: Warna dasar bendera Indonesia:", choices:["Merah-putih","Merah-biru","Putih-hijau","Merah-kuning"], correct:0, tag:"PPKn"},
+    {q:"PPKn: UUD yang berlaku saat ini:", choices:["UUD 1945","UUDS 1950","Konstitusi RIS","Piagam Jakarta"], correct:0, tag:"PPKn"},
+    {q:"PPKn: Lembaga yudikatif tertinggi:", choices:["MA","MK","DPR","BPK"], correct:1, tag:"PPKn"},
+    {q:"PPKn: Hak yang dimiliki setiap warga:", choices:["Hak asasi manusia","Hak istimewa","Hak khusus partai","Hak waris negara"], correct:0, tag:"PPKn"},
+
+    {q:"Geografi: Ibukota Jepang:", choices:["Seoul","Tokyo","Beijing","Kyoto"], correct:1, tag:"Geografi"},
+    {q:"Geografi: Garis khayal 0° disebut…", choices:["Ekuator","Meridian utama","Bujur 90°","Tropic"], correct:0, tag:"Geografi"},
+    {q:"Geografi: Benua terluas:", choices:["Afrika","Amerika","Asia","Eropa"], correct:2, tag:"Geografi"},
+    {q:"Geografi: Gunung tertinggi di dunia:", choices:["K2","Elbrus","Denali","Everest"], correct:3, tag:"Geografi"},
+    {q:"Geografi: Alat ukur gempa:", choices:["Higrometer","Seismograf","Anemometer","Altimeter"], correct:1, tag:"Geografi"},
+
+    {q:"Bahasa Indonesia: Antonim 'tinggi'", choices:["pendek","panjang","besar","kecil"], correct:0, tag:"B. Indo"},
+    {q:"Bahasa Indonesia: Kata baku:", choices:["aktifitas","praktis","kwalitas","ijin"], correct:1, tag:"B. Indo"},
+    {q:"Bahasa Indonesia: Kalimat efektif adalah…", choices:["Ringkas & jelas","Berputar-putar","Panjang sekali","Puitis"], correct:0, tag:"B. Indo"},
+    {q:"Bahasa Indonesia: Sinonim 'akan':", choices:["hendak","sudah","baru","lama"], correct:0, tag:"B. Indo"},
+    {q:"Bahasa Indonesia: Kata 'mereka' termasuk…", choices:["nomina","pronomina","adjektiva","adverbia"], correct:1, tag:"B. Indo"},
+
+    {q:"Ekonomi: Uang berfungsi sebagai…", choices:["harta warisan","alat tukar","perhiasan","sumber daya alam"], correct:1, tag:"Ekonomi"},
+    {q:"Ekonomi: Kebutuhan primer adalah…", choices:["hiburan","pangan","wisata","gadget mahal"], correct:1, tag:"Ekonomi"},
+    {q:"Ekonomi: Inflasi adalah…", choices:["penurunan harga umum","kenaikan harga umum","stabilnya harga","deflasi"], correct:1, tag:"Ekonomi"},
+    {q:"Ekonomi: Lembaga keuangan bank di Indonesia:", choices:["BI & OJK","UNICEF","WHO","FAO"], correct:0, tag:"Ekonomi"},
+    {q:"Ekonomi: Produksi adalah…", choices:["menghabiskan barang","membuat/menghasilkan barang","menjual barang bekas","mengimpor"], correct:1, tag:"Ekonomi"},
+
+    {q:"Seni Budaya: Warna primer (cahaya) bukan:", choices:["Merah","Hijau","Biru","Kuning"], correct:3, tag:"Seni"},
+    {q:"Seni Budaya: Alat musik gesek:", choices:["Gitar","Biola","Piano","Drum"], correct:1, tag:"Seni"},
+    {q:"Seni Budaya: Unsur rupa 'gelap terang' disebut…", choices:["tekstur","value","garis","bidang"], correct:1, tag:"Seni"},
+    {q:"Seni Budaya: Tarian tradisional Bali:", choices:["Jaipong","Piring","Kecak","Saman"], correct:2, tag:"Seni"},
+    {q:"Seni Budaya: Notasi musik 'do re mi' disebut…", choices:["tangga nada","tempo","dinamika","ritme"], correct:0, tag:"Seni"},
+  ];
+
+  // ====== Overlay helpers ======
+  const $ = sel => document.querySelector(sel);
+  function toggleOverlay(id, show=true) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = show ? 'flex' : 'none';
+  }
+  // expose minimal for inline usage
+  window.toggleOverlay = toggleOverlay;
+
+  // ====== Loading simulation ======
+  function showLoading() {
+    toggleOverlay('menu', false);
+    toggleOverlay('loading', true);
+    const prog = document.getElementById('prog');
+    let v = 0;
+    const t = setInterval(()=> {
+      v += Math.random()*18 + 6;
+      prog.value = Math.min(100, v);
+      if (v >= 100) {
+        clearInterval(t);
+        toggleOverlay('loading', false);
+        startGame();
+      }
+    }, 180);
+  }
+
+  // ====== Start / Reset ======
+  function startGame() {
+    state.scene = 'play';
+    state.camX = 0;
+    state.stars = 0;
+    state.lives = 3;
+    state.questionGateOpen = 0;
+    state.checkpointX = 60;
+    player.x = 60; player.y = groundY-40; player.vx = 0; player.vy = 0;
+    stars.forEach(s=> s.got=false);
+    barriers.forEach(b=> b.opened=false);
+    state.answered.clear();
+    loop();
+  }
+
+  // ====== Input ======
+  window.addEventListener('keydown', (e)=> {
+    if (['ArrowLeft','ArrowRight','ArrowUp',' '].includes(e.key)) e.preventDefault();
+    state.keys[e.key] = true;
+  });
+  window.addEventListener('keyup', (e)=> { state.keys[e.key] = false; });
+
+  // Touch buttons
+  const tpanel = document.getElementById('touch');
+  tpanel.addEventListener('touchstart', e=>{
+    const t = e.target.closest('[data-k]');
+    if (t){ e.preventDefault(); pressKey(t.dataset.k, true); }
+  }, {passive:false});
+  tpanel.addEventListener('touchend', e=>{
+    const t = e.target.closest('[data-k]');
+    if (t){ e.preventDefault(); pressKey(t.dataset.k, false); }
+  }, {passive:false});
+  function pressKey(k, down){
+    if (k === 'ArrowLeft') state.touch.left = down;
+    if (k === 'ArrowRight') state.touch.right = down;
+    if (k === 'Space') { if (down) jump(); }
+  }
+
+  // ====== Physics & Game Loop ======
+  function handleInput() {
+    const left = state.keys['ArrowLeft'] || state.touch.left;
+    const right = state.keys['ArrowRight'] || state.touch.right;
+    const jumpKey = state.keys['ArrowUp'] || state.keys[' '] || state.keys['Space'];
+
+    if (left && !right) { player.vx -= 0.7; player.facing = -1; }
+    if (right && !left) { player.vx += 0.7; player.facing = 1; }
+    if (!left && !right) { player.vx *= state.friction; }
+
+    if (jumpKey) { jump(); }
+  }
+
+  function jump() {
+    if (player.onGround) { player.vy = -CONFIG.JUMP_STRENGTH; player.onGround = false; }
+  }
+
+  function applyPhysics() {
+    // gravity
+    player.vy += state.gravity;
+    // horizontal
+    player.x += player.vx;
+    // collisions X with platforms and barriers (closed)
+    collideWorldX([...platforms, ...barriers.filter(b=>!b.opened)]);
+    // vertical
+    player.y += player.vy;
+    player.onGround = false;
+    collideWorldY([...platforms, ...barriers.filter(b=>!b.opened)]);
+    // clamp
+    player.x = clamp(player.x, 0, 3000);
+    player.y = Math.min(player.y, 2000);
+    // camera follows
+    state.camX = clamp(player.x - canvas.width/2 + player.w/2, 0, 3000 - canvas.width + 200);
+  }
+
+  function collideWorldX(objs) {
+    for (const o of objs) {
+      if (rectsOverlap(player, o)) {
+        if (player.vx > 0) player.x = o.x - player.w;
+        else if (player.vx < 0) player.x = o.x + o.w;
+        player.vx = 0;
+      }
+    }
+  }
+  function collideWorldY(objs) {
+    for (const o of objs) {
+      if (rectsOverlap(player, o)) {
+        if (player.vy > 0) { // falling
+          player.y = o.y - player.h;
+          player.vy = 0; player.onGround = true;
+        } else if (player.vy < 0) { // jumping up
+          player.y = o.y + o.h; player.vy = 0;
+        }
+      }
+    }
+  }
+
+  function updateEnemies() {
+    for (const m of enemies) {
+      m.x += m.speed * m.dir;
+      if (m.x < m.min) { m.x = m.min; m.dir = 1; }
+      if (m.x + m.w > m.max) { m.x = m.max - m.w; m.dir = -1; }
+      // collision with player
+      if (rectsOverlap(player, m)) {
+        // if falling onto enemy, "stomp"
+        if (player.vy > 2) {
+          player.vy = -9;
+          // knock enemy away temporarily
+          m.min -= 6; m.max += 6;
+        } else {
+          die();
+        }
+      }
+    }
+  }
+
+  function die() {
+    state.lives -= 1;
+    if (state.lives < 0) { // reset full run
+      startGame();
+      return;
+    }
+    // respawn at checkpoint
+    player.x = state.checkpointX; player.y = groundY-80; player.vx = 0; player.vy = 0;
+  }
+
+  function collectStarsAndCheckpoints() {
+    for (const s of stars) {
+      if (!s.got && rectsOverlap(player, {x:s.x, y:s.y, w:18, h:18})) {
+        s.got = true; state.stars += 1;
+        // update checkpoint slightly forward
+        state.checkpointX = Math.max(state.checkpointX, player.x - 10);
+        // queue quiz every 3 stars
+        if (state.stars % 3 === 0) askQuestion();
+      }
+    }
+  }
+
+  function checkBarriers() {
+    for (const b of barriers) {
+      if (!b.opened && state.stars >= b.needStars) {
+        if (!state.pendingQuestion) askQuestion();
+      }
+    }
+  }
+
+  function checkWin() {
+    if (rectsOverlap(player, goal)) {
+      state.scene = 'win';
+      showWinOverlay();
+    }
+  }
+
+  // ====== Quiz Handling ======
+  function pickQuestion() {
+    // pick not-yet-answered
+    const candidates = QUIZ.map((q,i)=>({q,i})).filter(o=>!state.answered.has(o.i));
+    if (candidates.length === 0) return null;
+    const r = candidates[Math.floor(Math.random()*candidates.length)];
+    return {...r.q, idx:r.i};
+  }
+
+  function askQuestion() {
+    if (state.pendingQuestion) return;
+    const picked = pickQuestion();
+    if (!picked) return;
+    state.pendingQuestion = picked;
+    showQuiz(picked);
+  }
+
+  function showQuiz(q) {
+    const qText = document.getElementById('qText');
+    const qChoices = document.getElementById('qChoices');
+    const qTitle = document.getElementById('qTitle');
+    const qFeedback = document.getElementById('qFeedback');
+    qTitle.textContent = `KUIS • ${q.tag}`;
+    qText.textContent = q.q;
+    qChoices.innerHTML = '';
+    qFeedback.textContent = '';
+    q.choices.forEach((c, idx)=>{
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = c;
+      btn.onclick = ()=> answerQuestion(q, idx);
+      qChoices.appendChild(btn);
+    });
+    document.getElementById('skipBtn').onclick = ()=> { toggleOverlay('quiz', false); state.pendingQuestion = null; };
+    toggleOverlay('quiz', true);
+    // pause player a bit
+    player.vx = 0;
+  }
+
+  function answerQuestion(q, idx) {
+    const qFeedback = document.getElementById('qFeedback');
+    if (idx === q.correct) {
+      qFeedback.textContent = 'Benar! Penghalang terbuka.';
+      state.answered.add(q.idx);
+      // open one closed barrier if exists
+      const toOpen = barriers.find(b=>!b.opened && state.stars >= b.needStars);
+      if (toOpen) toOpen.opened = true;
+      setTimeout(()=> {
+        toggleOverlay('quiz', false);
+        state.pendingQuestion = null;
+      }, 600);
+    } else {
+      qFeedback.textContent = 'Masih kurang tepat. Coba lagi!';
+    }
+  }
+
+  // ====== Drawing ======
+  function drawBackground() {
+    ctx.fillStyle = PAL.bgSky;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Parallax far hills/stripes
+    ctx.fillStyle = PAL.bgFar;
+    for (let i=0;i<6;i++){
+      const y = canvas.height - 120 - i*28;
+      ctx.fillRect(- (state.camX*0.2 % 300) + i*300, y, 280, 10);
+      ctx.fillRect(- (state.camX*0.15 % 340) + i*340 + 120, y+18, 300, 8);
+    }
+  }
+
+  function drawGroundAndPlatforms() {
+    // ground segments with slight stripes
+    const segs = platforms.filter(p=>p.h>=40);
+    for (const g of segs) {
+      const sx = g.x - state.camX;
+      ctx.fillStyle = PAL.ground1; ctx.fillRect(sx, g.y, g.w, g.h);
+      ctx.fillStyle = PAL.ground2;
+      for (let i=0;i<g.w;i+=24) ctx.fillRect(sx+i, g.y+g.h-24, 20, 24);
+    }
+    // floating
+    ctx.fillStyle = PAL.block;
+    for (const p of platforms.filter(p=>p.h<40)) {
+      const sx = p.x - state.camX;
+      ctx.fillStyle = PAL.block; ctx.fillRect(sx, p.y, p.w, p.h);
+      ctx.strokeStyle = PAL.blockEdge; ctx.lineWidth = 2; ctx.strokeRect(sx+0.5, p.y+0.5, p.w-1, p.h-1);
+    }
+    // barriers
+    for (const b of barriers) {
+      const sx = b.x - state.camX;
+      if (!b.opened) {
+        ctx.fillStyle = '#ffcc66'; ctx.fillRect(sx, b.y, b.w, b.h);
+        ctx.strokeStyle = '#d49b00'; ctx.lineWidth = 2; ctx.strokeRect(sx+0.5,b.y+0.5,b.w-1,b.h-1);
+      } else {
+        // draw opened (transparent marker)
+        ctx.strokeStyle = '#ffe39b'; ctx.setLineDash([6,6]); ctx.strokeRect(sx+0.5,b.y+0.5,b.w-1,b.h-1); ctx.setLineDash([]);
+      }
+    }
+  }
+
+  function drawStars() {
+    for (const s of stars) {
+      if (s.got) continue;
+      const x = s.x - state.camX, y = s.y;
+      ctx.save();
+      ctx.translate(x+9, y+9);
+      ctx.rotate((Date.now()/300)% (Math.PI*2));
+      ctx.fillStyle = PAL.star; ctx.strokeStyle = PAL.starEdge; ctx.lineWidth = 2;
+      starPath(9); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function starPath(r) {
+    ctx.beginPath();
+    for (let i=0;i<5;i++){
+      const a1 = (Math.PI*2)*i/5 - Math.PI/2;
+      const a2 = a1 + Math.PI/5;
+      ctx.lineTo(Math.cos(a1)*r, Math.sin(a1)*r);
+      ctx.lineTo(Math.cos(a2)*(r*0.45), Math.sin(a2)*(r*0.45));
+    }
+    ctx.closePath();
+  }
+
+  function drawEnemies() {
+    for (const m of enemies) {
+      const x = m.x - state.camX, y = m.y;
+      // body
+      ctx.fillStyle = PAL.enemy; ctx.fillRect(x, y, m.w, m.h);
+      ctx.strokeStyle = PAL.enemyEdge; ctx.lineWidth = 2; ctx.strokeRect(x+0.5, y+0.5, m.w-1, m.h-1);
+      // eyes
+      ctx.fillStyle = '#1a1d28';
+      ctx.fillRect(x+6, y+8, 6,6);
+      ctx.fillRect(x+m.w-12, y+8, 6,6);
+    }
+  }
+
+  function drawPlayer() {
+    const x = player.x - state.camX, y = player.y;
+    // shadow
+    ctx.fillStyle = PAL.shadow; ctx.fillRect(x, y+player.h-4, player.w, 4);
+    // body (simple chibi)
+    ctx.fillStyle = PAL.player;
+    ctx.fillRect(x, y, player.w, player.h);
+    ctx.strokeStyle = PAL.playerEdge; ctx.lineWidth = 2; ctx.strokeRect(x+0.5, y+0.5, player.w-1, player.h-1);
+    // face
+    ctx.fillStyle = '#0e0f13';
+    const eyeY = y+10, eyeX = x + (player.facing===1 ? 14 : 6);
+    ctx.fillRect(eyeX, eyeY, 4,4);
+    ctx.fillRect(eyeX-6, eyeY, 4,4);
+    // name label
+    ctx.fillStyle = PAL.text;
+    ctx.font = 'bold 12px system-ui, Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Ahri', x+player.w/2, y-6);
+  }
+
+  function drawGoal() {
+    const gx = goal.x - state.camX;
+    ctx.fillStyle = PAL.goalPole; ctx.fillRect(gx, goal.y, goal.w, goal.h);
+    ctx.fillStyle = PAL.goal;
+    ctx.beginPath();
+    ctx.moveTo(gx + goal.w, goal.y+10);
+    ctx.lineTo(gx + goal.w + 36, goal.y+24);
+    ctx.lineTo(gx + goal.w, goal.y+38);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawHUD() {
+    ctx.fillStyle = '#11131b88'; ctx.fillRect(8,8, 260, 58);
+    ctx.fillStyle = PAL.text;
+    ctx.font = 'bold 16px system-ui, Arial';
+    ctx.fillText('EduBros', 20, 28);
+    ctx.font = '12px system-ui, Arial';
+    ctx.fillText('Edukasi itu penting', 20, 44);
+    ctx.fillText(`⭐ ${state.stars}    ❤️ ${state.lives}    ✔️ ${state.answered.size}/45`, 20, 60);
+  }
+
+  function showWinOverlay() {
+    let win = document.getElementById('win');
+    if (!win) {
+      win = document.createElement('div');
+      win.id = 'win'; win.className = 'overlay';
+      win.innerHTML = `
+        <div class="card center">
+          <div class="title" style="font-size:28px;">Level Selesai!</div>
+          <div class="mt8" id="winStats"></div>
+          <div class="btnbar mt16">
+            <button class="btn primary" id="playAgainBtn">Main Lagi</button>
+          </div>
+        </div>`;
+      document.body.appendChild(win);
+      // bind once
+      win.querySelector('#playAgainBtn').onclick = () => { toggleOverlay('win', false); startGame(); };
+    }
+    const stat = win.querySelector('#winStats');
+    stat.textContent = `Skor ⭐ ${state.stars} • Jawaban benar ${state.answered.size}`;
+    toggleOverlay('win', true);
+  }
+
+  // ====== Main loop ======
+  let rafId = 0;
+  function loop() {
+    if (state.scene !== 'play') return;
+    handleInput();
+    applyPhysics();
+    updateEnemies();
+    collectStarsAndCheckpoints();
+    checkBarriers();
+    checkWin();
+
+    // Draw
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawBackground();
+    drawGroundAndPlatforms();
+    drawStars();
+    drawEnemies();
+    drawGoal();
+    drawPlayer();
+    drawHUD();
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ====== Menu buttons ======
+  document.getElementById('startBtn').onclick = showLoading;
+  document.getElementById('howBtn').onclick = ()=> toggleOverlay('how', true);
+
+  // Accessibility: hide touch controls on wide desktop
+  function updateTouchVisibility() {
+    const isNarrow = window.innerWidth < 920 || /Mobi|Android/i.test(navigator.userAgent);
+    document.getElementById('touch').style.display = isNarrow ? 'flex' : 'none';
+  }
+  window.addEventListener('resize', updateTouchVisibility);
+  updateTouchVisibility();
+
+})();
+</script>
+</body>
+</html>
