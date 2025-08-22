@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <style>
+      .bg{fill:#0e0f13}
+      .c1{fill:#7be0ff}
+      .c2{fill:#2dc0ff}
+      .txt{fill:#e7ecf3; font: 700 28px/1 monospace}
+    </style>
+  </defs>
+  <!-- background -->
+  <rect class="bg" x="0" y="0" width="256" height="256" rx="28" ry="28"/>
+  <!-- simple pixel character -->
+  <rect x="84" y="60" width="88" height="108" fill="#7be0ff" stroke="#2dc0ff" stroke-width="6" rx="8"/>
+  <rect x="110" y="96" width="12" height="12" fill="#0e0f13"/>
+  <rect x="138" y="96" width="12" height="12" fill="#0e0f13"/>
+  <rect x="98" y="168" width="24" height="12" fill="#2dc0ff"/>
+  <rect x="134" y="168" width="24" height="12" fill="#2dc0ff"/>
+  <!-- tiny star -->
+  <polygon points="196,64 203,80 220,80 206,90 212,106 196,96 180,106 186,90 172,80 189,80" fill="#ffd95a" stroke="#ffb700" stroke-width="2"/>
+  <!-- title text -->
+  <text class="txt" x="128" y="228" text-anchor="middle">EduBros</text>
+</svg>
